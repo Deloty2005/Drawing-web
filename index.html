@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="shortcut icon" href="Trisha.jpeg" type="image/x-icon">
+
+<title>AI Style Drawing</title>
+
+<style>
+*{
+    box-sizing:border-box;
+}
+
+body{
+    margin:0;
+    min-height:100vh;
+    background:#d7d7d7;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding:20px;
+    font-family:Arial,sans-serif;
+}
+
+.app{
+    width:100%;
+    max-width:950px;
+    background:#f5f1e8;
+    padding:20px;
+    border-radius:18px;
+    box-shadow:0 15px 40px rgba(0,0,0,.25);
+}
+
+h1{
+    text-align:center;
+    margin:5px 0 18px;
+}
+
+.controls{
+    display:flex;
+    justify-content:center;
+    gap:10px;
+    margin-bottom:15px;
+}
+
+button{
+    border:0;
+    border-radius:8px;
+    padding:11px 22px;
+    background:#222;
+    color:white;
+    cursor:pointer;
+    font-size:15px;
+}
+
+button:hover{
+    background:#444;
+}
+
+.paper{
+    position:relative;
+    width:100%;
+    background:#fffdf8;
+    border:1px solid #aaa;
+    overflow:hidden;
+    box-shadow:0 5px 15px rgba(0,0,0,.15);
+}
+
+canvas{
+    width:100%;
+    height:auto;
+    display:block;
+}
+
+#hand{
+    position:absolute;
+    width:65px;
+    height:65px;
+    display:none;
+    pointer-events:none;
+    z-index:20;
+}
+
+#hand::before{
+    content:"";
+    position:absolute;
+    width:35px;
+    height:48px;
+    background:#e4b08d;
+    border-radius:45% 45% 35% 35%;
+    transform:rotate(-25deg);
+    left:16px;
+    top:8px;
+}
+
+#hand::after{
+    content:"";
+    position:absolute;
+    width:9px;
+    height:58px;
+    background:#333;
+    border-radius:5px;
+    transform:rotate(-35deg);
+    left:23px;
+    top:2px;
+}
+
+.status{
+    text-align:center;
+    color:#555;
+    margin-top:12px;
+}
+
+.progress{
+    height:7px;
+    background:#ddd;
+    border-radius:10px;
+    overflow:hidden;
+    margin-top:10px;
+}
+
+#progressBar{
+    height:100%;
+    width:0%;
+    background:#333;
+}
+</style>
+</head>
+
+<body>
+
+<div class="app">
+
+<h1>🎨 MindSet Hand Drawing ❤️</h1>
+
+<div class="controls">
+
+    <button onclick="startDrawing()">
+        ✏️ Start Drawing ❤️
+    </button>
+
+</div>
+
+<div class="paper">
+
+    <canvas id="canvas"></canvas>
+
+    <div id="hand"></div>
+
+</div>
+
+<div class="progress">
+    <div id="progressBar"></div>
+</div>
+
+<div class="status" id="status">
+    Press Start Drawing
+</div>
+
+</div>
+
+
+<script>
+
+const canvas =
+document.getElementById("canvas");
+
+const ctx =
+canvas.getContext("2d");
+
+const hand =
+document.getElementById("hand");
+
+const status =
+document.getElementById("status");
+
+const progressBar =
+document.getElementById("progressBar");
+
+
+let img = null;
+let sourceCanvas = null;
+let sourceCtx = null;
+
+let strokes = [];
+let currentStroke = 0;
+let animationID = null;
+let paused = false;
+
+
+// =====================================================
+// YOUR PHOTO
+// =====================================================
+
+img = new Image();
+
+img.onload = function(){
+
+    prepareCanvas();
+
+    status.innerText =
+        "Ready. Press Start Drawing.";
+
+};
+
+img.src = "Trisha.jpeg";
+
+
+// =====================================================
+// PREPARE CANVAS
+// =====================================================
+
+function prepareCanvas(){
+
+    const maxWidth = 850;
+
+    const scale =
+        Math.min(
+            1,
+            maxWidth / img.width
+        );
+
+    const w =
+        Math.floor(img.width * scale);
+
+    const h =
+        Math.floor(img.height * scale);
+
+
+    canvas.width = w;
+    canvas.height = h;
+
+
+    sourceCanvas =
+        document.createElement("canvas");
+
+    sourceCanvas.width = w;
+    sourceCanvas.height = h;
+
+    sourceCtx =
+        sourceCanvas.getContext("2d");
+
+    sourceCtx.drawImage(
+        img,
+        0,
+        0,
+        w,
+        h
+    );
+
+
+    ctx.fillStyle =
+        "#fffdf8";
+
+    ctx.fillRect(
+        0,
+        0,
+        w,
+        h
+    );
+}
+
+
+// =====================================================
+// GET COLOUR
+// =====================================================
+
+function getColor(x,y){
+
+    const pixel =
+        sourceCtx.getImageData(
+            Math.floor(x),
+            Math.floor(y),
+            1,
+            1
+        ).data;
+
+    return {
+        r:pixel[0],
+        g:pixel[1],
+        b:pixel[2]
+    };
+}
+
+
+// =====================================================
+// CREATE STROKES
+// =====================================================
+
+function createStrokes(){
+
+    strokes = [];
+
+    const w = canvas.width;
+    const h = canvas.height;
+
+
+    const layers = [
+
+        {
+            step:12,
+            size:14,
+            alpha:.18
+        },
+
+        {
+            step:8,
+            size:9,
+            alpha:.25
+        },
+
+        {
+            step:5,
+            size:5,
+            alpha:.38
+        },
+
+        {
+            step:3,
+            size:2.5,
+            alpha:.65
+        }
+
+    ];
+
+
+    for(const layer of layers){
+
+        for(
+            let y=0;
+            y<h;
+            y+=layer.step
+        ){
+
+            for(
+                let x=0;
+                x<w;
+                x+=layer.step
+            ){
+
+                const px =
+                    x +
+                    (Math.random()-.5)
+                    *layer.step;
+
+                const py =
+                    y + (Math.random()-.5)*layer.step;
+
+
+                if(
+                    px<0 ||
+                    py<0 ||
+                    px>=w ||
+                    py>=h
+                ){
+                    continue;
+                }
+
+
+                const color =
+                    getColor(px,py);
+
+
+                if(
+                    color.r>245 &&
+                    color.g>245 &&
+                    color.b>245 &&
+                    Math.random()<.35
+                ){
+                    continue;
+                }
+
+
+                const angle =
+                    Math.random()*0.7-0.35;
+
+
+                const length =
+                    layer.size *
+                    (
+                        .7 +
+                        Math.random()*1.5
+                    );
+
+
+                strokes.push({
+
+                    x:px,
+                    y:py,
+
+                    length:length,
+
+                    angle:angle,
+
+                    size:
+                        layer.size *
+                        (
+                            .7 +
+                            Math.random()*.7
+                        ),
+
+                    color:color,
+
+                    alpha:
+                        layer.alpha *
+                        (
+                            .7 +
+                            Math.random()*.5
+                        )
+
+                });
+
+            }
+
+        }
+
+    }
+
+    shuffle(strokes);
+}
+
+// =====================================================
+// SHUFFLE
+// =====================================================
+
+function shuffle(array){
+
+    for(
+        let i=array.length-1;
+        i>0;
+        i--
+    ){
+
+        const j =
+            Math.floor(
+                Math.random()*(i+1)
+            );
+
+        [
+            array[i],
+            array[j]
+        ] =
+        [
+            array[j],
+            array[i]
+        ];
+    }
+}
+
+
+// =====================================================
+// DRAW STROKE
+// =====================================================
+
+function drawStroke(s){
+
+    const c = s.color;
+
+    ctx.save();
+
+    ctx.globalAlpha = s.alpha;
+
+    ctx.strokeStyle =
+        `rgb(${c.r},${c.g},${c.b})`;
+
+    ctx.lineWidth = s.size;
+
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    ctx.beginPath();
+
+
+    const dx =
+        Math.cos(s.angle)
+        *s.length;
+
+    const dy =
+        Math.sin(s.angle)
+        *s.length;
+
+
+    const cx =
+        s.x +
+        dx*.5 +
+        (Math.random()-.5)*2;
+
+    const cy =
+        s.y +
+        dy*.5 +
+        (Math.random()-.5)*2;
+
+
+    ctx.moveTo(
+        s.x,
+        s.y
+    );
+
+    ctx.quadraticCurveTo(
+        cx,
+        cy,
+        s.x+dx,
+        s.y+dy
+    );
+
+    ctx.stroke();
+
+    ctx.restore();
+}
+
+
+// =====================================================
+// START DRAWING
+// =====================================================
+
+function startDrawing(){
+
+    if(!img.complete){
+
+        status.innerText =
+            "Loading photo...";
+
+        return;
+    }
+
+
+    cancelAnimationFrame(
+        animationID
+    );
+
+
+    prepareCanvas();
+
+
+    status.innerText =
+        "Preparing coloured drawing...";
+
+
+    createStrokes();
+
+
+    currentStroke = 0;
+    paused = false;
+
+
+    hand.style.display =
+        "block";
+
+
+    setTimeout(
+        animate,
+        100
+    );
+}
+
+
+// =====================================================
+// ANIMATION
+// =====================================================
+
+function animate(){
+
+    if(paused){
+        return;
+    }
+
+
+    const speed =
+        Math.max(
+            80,
+            Math.floor(
+                strokes.length/450
+            )
+        );
+
+
+    for(
+        let i=0;
+        i<speed &&
+        currentStroke<strokes.length;
+        i++
+    ){
+
+        drawStroke(
+            strokes[currentStroke]
+        );
+
+        currentStroke++;
+    }
+
+
+    if(currentStroke>0){
+
+        const s =
+            strokes[
+                Math.min(
+                    currentStroke-1,
+                    strokes.length-1
+                )
+            ];
+
+
+        hand.style.left =
+            (s.x-32)+"px";
+
+        hand.style.top =
+            (s.y-32)+"px";
+    }
+
+
+    const percent =
+        (
+            currentStroke /
+            strokes.length
+        ) * 100;
+
+
+    progressBar.style.width =
+        percent+"%";
+
+
+    status.innerText =
+        "Artist drawing... " +
+        Math.floor(percent) +
+        "%";
+
+
+    if(
+        currentStroke <
+        strokes.length
+    ){
+
+        animationID =
+            requestAnimationFrame(
+                animate
+            );
+
+    }
+    else{
+
+        finish();
+
+    }
+}
+
+
+// =====================================================
+// FINISH
+// =====================================================
+
+function finish(){
+
+    hand.style.display =
+        "none";
+
+    progressBar.style.width =
+        "100%";
+
+    status.innerText =
+        "🎨 Drawing completed!...🥰😍";
+}
+
+</script>
+
+</body>
+</html>
